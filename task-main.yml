@@ -1,0 +1,135 @@
+---
+- name: Check if pass docker images exist
+  import_tasks: common/common_playbook_tasks/check_docker_registry_images.yml
+  vars:
+    docker_registry_to_check: "{{ docker_registry_new }}"
+    images:
+    - project: pass
+      name: pass-server
+      version: "{{ pass_app_version }}"
+      use_docker_registry_aws_proxy: True
+    - project: pass
+      name: pass-simulator
+      version: "{{ pass_app_version }}"
+      use_docker_registry_aws_proxy: True
+  tags:
+    - pre_check
+    - pre_check_image
+
+- name: Retrieve current version
+  springboot_current_version:
+    actuator_info_endpoint_url: "http://localhost:{{ pass_app_server.port }}/internal/actuator/info"
+  register: current_version
+  ignore_errors: true
+  tags:
+    - pre_check
+    - smoke_test
+
+- name: "Run pre-deployment smoke tests version {{ current_version.data }}"
+  container_smoke_tests:
+    test_image_name: pass/pass-test
+    version: "{{ current_version.data }}"
+    env:
+      PASS_SERVER_URL: "http://localhost:{{ pass_app_server.port }}"
+      PASS_SIMULATOR_URL: "http://localhost:{{ pass_app_simulator.port }}"
+      REDIS_HOST: "{{ pass_app_redis.host }}"
+      REDIS_PORT: "{{ pass_app_redis.port }}"
+      ELASTIC_URL: "{{ pass_app_elasticsearch.urls }}"
+      BROKER_HOST: "{{ vad_core_cli_broker[0].cluster[0].host }}"
+      BROKER_PORT: "{{ vad_core_cli_broker[0].cluster[0].port }}"
+      BROKER_FAILOVER_HOST: "{{ vad_core_cli_broker[0].cluster[1].host }}"
+      BROKER_FAILOVER_PORT: "{{ vad_core_cli_broker[0].cluster[1].port }}"
+    env_file: "/etc/lyra/pass-server/variables.env"
+  when: current_version is success
+  tags:
+    - pre_check
+    - pre_smoke_test
+    - smoke_test
+
+- include: stop.yml
+
+- name: Deploy env file
+  template:
+    src: "{{ item }}.env.j2"
+    dest: "{{ pass_app_configuration.directory }}/{{ item }}/container.env"
+  tags:
+    - configuration
+  with_items:
+    - "pass-server"
+    - "pass-simulator"
+    - "pass-billing"
+    - "pass-cleaner"
+
+- name: Start pass-simulator service
+  shell: sudo systemctl start pass-simulator
+  tags:
+    - start
+
+- name: Check that PASS simulator is up and running
+  uri:
+    url: "http://localhost:{{ pass_app_simulator.port }}/internal/actuator/health"
+  register: result
+  retries: 30
+  delay: 12
+  until: result.status == 200
+  tags:
+    - post_check
+
+- name: Start pass-server service
+  shell: sudo systemctl start pass-server
+  tags:
+    - start
+
+- name: Check that PASS server is up and running
+  uri:
+    url: "http://localhost:{{ pass_app_server.port }}/internal/actuator/health"
+  register: result
+  retries: 30
+  delay: 12
+  until: result.status == 200
+  tags:
+    - post_check
+
+- name: "Run post-deployment smoke tests version {{ pass_app_version }}"
+  container_smoke_tests:
+    test_image_name: pass/pass-test
+    version: "{{ pass_app_version }}"
+    env:
+      PASS_SERVER_URL: "http://localhost:{{ pass_app_server.port }}"
+      PASS_SIMULATOR_URL: "http://localhost:{{ pass_app_simulator.port }}"
+      REDIS_HOST: "{{ pass_app_redis.host }}"
+      REDIS_PORT: "{{ pass_app_redis.port }}"
+      ELASTIC_URL: "{{ pass_app_elasticsearch.urls }}"
+      BROKER_HOST: "{{ vad_core_cli_broker[0].cluster[0].host }}"
+      BROKER_PORT: "{{ vad_core_cli_broker[0].cluster[0].port }}"
+      BROKER_FAILOVER_HOST: "{{ vad_core_cli_broker[0].cluster[1].host }}"
+      BROKER_FAILOVER_PORT: "{{ vad_core_cli_broker[0].cluster[1].port }}"
+    env_file: "/etc/lyra/pass-server/variables.env"
+  tags:
+    - post_check
+    - post_smoke_test
+    - smoke_test
+
+- name: "Run post-deployment batch smoke tests version {{ pass_app_version }}"
+  container_smoke_tests:
+    test_image_name: pass/pass-server
+    version: "{{ pass_app_version }}"
+    env:
+      SPRING_MAIN_WEBAPPLICATIONTYPE: "none"
+      PASS_SERVER_BATCHMODE_ENABLED: "true"
+      PASS_SERVER_BATCHMODE_NETWORK: "CB"
+      PASS_SERVER_BATCHMODE_FLUSHENTIRECACHE: "false"
+      PASS_SERVER_BATCHMODE_REFRESHMODE: "SIMULATION"
+      PASS_SERVER_BATCHMODE_REQUESTHUGEPRES: "false"
+      PASS_SERVER_BATCHMODE_ACTION: "S3_UPDATE"
+      SPRING_CLOUD_VAULT_ENABLED: "true"
+      AWS_S3_ENABLED: "true"
+    env_file:
+      - "/etc/lyra/pass-server/container.env"
+      - "/etc/lyra/pass-server/variables.env"
+  when: pass_app_aws.s3 is defined
+  tags:
+    - post_check
+    - post_smoke_test
+    - smoke_test
+    - batch_smoke_test
