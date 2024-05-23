@@ -1,0 +1,24 @@
+---
+
+# General configuration
+pass_app_configuration:
+    directory: /etc/lyra
+
+# Redis configuration
+pass_app_redis:
+    host: localhost
+    port: 6379
+
+# Pass Sentry Configuration
+pass_app_server_sentry_dsn: https://1c2f223ae75fd66eec6c7eba053efe68@o4505833515188224.ingest.sentry.io/4505861919211522
+pass_app_simulator_sentry_dsn: https://2fbcddbe6cd8d56583602279f8d65bed@o4505833515188224.ingest.sentry.io/4505861919145984
+pass_app_billing_sentry_dsn: https://2ff5fc2e08c4f0723dfd5793315c46b6@o4505833515188224.ingest.sentry.io/4505861919408129
+pass_app_cleaner_sentry_dsn: https://8c28138f9efc3b49582bab3796e8952c@o4505833515188224.ingest.sentry.io/4505861919211526
+pass_app_js_sentry_dsn: https://f20c1597ed6ac0f3408b49fb395ae3cf@o4505833515188224.ingest.sentry.io/4505861919342597
+
+pass_app_version: "{{ application_version }}"
+
+pass_app_feature_flags:
+    ENABLE_MASTERCARD_INDIA: true
+    IGNORE_ELASTIC_SEARCH_DEPENDENCIES: false
+    ENABLE_VISA_INDIA: true
